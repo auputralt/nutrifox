@@ -79,7 +79,58 @@ export default function UploadZone({ onFile }: Props) {
       streamRef.current = null;
     }
     setCameraActive(false);
-    facingModeRef.current = "environment";
+  }, []);
+
+  // Switch camera (rear ↔ front) — mobile devices
+  const switchCamera = useCallback(async () => {
+    // Stop current stream
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    // Toggle facing mode
+    const next = facingModeRef.current === "environment" ? "user" : "environment";
+    facingModeRef.current = next;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: next },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      });
+      streamRef.current = stream;
+      // Update facing mode from actual track
+      const reported = stream.getVideoTracks()[0]?.getSettings?.()?.facingMode;
+      if (reported === "user" || reported === "environment") {
+        facingModeRef.current = reported;
+      }
+    } catch {
+      // Switch failed, revert
+      facingModeRef.current = next === "environment" ? "user" : "environment";
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: facingModeRef.current },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        });
+        streamRef.current = stream;
+      } catch {
+        stopCamera();
+      }
+    }
+  }, [stopCamera]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+    };
   }, []);
 
   // Start webcam — tries rear camera, then front camera, then native fallback
@@ -105,14 +156,17 @@ export default function UploadZone({ onFile }: Props) {
         },
       ];
 
-      for (const c of constraints) {
+      for (let i = 0; i < constraints.length; i++) {
         try {
-          stream = await navigator.mediaDevices.getUserMedia(c);
-          // Track which facing mode succeeded
-          const track = stream.getVideoTracks()[0];
-          const settings = track?.getSettings?.();
-          facingModeRef.current =
-            ((settings?.facingMode as string) || "environment") as "user" | "environment";
+          stream = await navigator.mediaDevices.getUserMedia(constraints[i]);
+          // Determine facing mode: index 0 = environment, index 1 = user
+          // Browser-reported facingMode unreliable on laptops — use constraint index
+          const reported = stream.getVideoTracks()[0]?.getSettings?.()?.facingMode;
+          if (reported === "user" || reported === "environment") {
+            facingModeRef.current = reported;
+          } else {
+            facingModeRef.current = i === 0 ? "environment" : "user";
+          }
           break;
         } catch {
           continue; // Try next constraint
@@ -136,11 +190,9 @@ export default function UploadZone({ onFile }: Props) {
     if (video && streamRef.current) {
       video.srcObject = streamRef.current;
     }
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-      }
-    };
+    // No cleanup here — stopCamera() handles stream teardown.
+    // A cleanup that stops tracks would kill the stream startWebcam just created
+    // because React runs the previous effect's cleanup before the new effect.
   }, [cameraActive]);
 
   const handleDrop = useCallback(
@@ -189,6 +241,31 @@ export default function UploadZone({ onFile }: Props) {
         }}
       />
       <div className="flex items-center justify-center gap-3 py-3 bg-black/80">
+        {/* Switch camera — useful on phones with multiple cameras */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            switchCamera();
+          }}
+          className="inline-flex items-center justify-center w-10 h-10 bg-white/20 text-white rounded-xl hover:bg-white/30 active:scale-[0.95] transition-all"
+          title="Switch camera"
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M20 16v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4" />
+            <path d="M16 10l4 4-4 4" />
+            <path d="M4 8V4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4" />
+            <path d="M8 14l-4-4 4-4" />
+          </svg>
+        </button>
         <button
           onClick={(e) => {
             e.stopPropagation();
