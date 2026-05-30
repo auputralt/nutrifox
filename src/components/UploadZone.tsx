@@ -40,6 +40,7 @@ export default function UploadZone({ onFile }: Props) {
 
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
+    if (!ctx) return;
     canvas.width = video.videoWidth;
     canvas.height = video.height;
 
@@ -111,7 +112,7 @@ export default function UploadZone({ onFile }: Props) {
           const track = stream.getVideoTracks()[0];
           const settings = track?.getSettings?.();
           facingModeRef.current =
-            (settings?.facingMode as string) || "environment";
+            ((settings?.facingMode as string) || "environment") as "user" | "environment";
           break;
         } catch {
           continue; // Try next constraint

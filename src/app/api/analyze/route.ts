@@ -255,11 +255,12 @@ export async function POST(request: NextRequest) {
       }
 
       // Validate required fields
+      const total = analysis.total as Record<string, unknown> | undefined;
       if (
         !analysis.foods ||
         !Array.isArray(analysis.foods) ||
-        !analysis.total ||
-        typeof analysis.total.calories !== "number"
+        !total ||
+        typeof total.calories !== "number"
       ) {
         lastError = `Invalid analysis format from ${model}`;
         console.error(lastError);
